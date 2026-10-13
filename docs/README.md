@@ -2,7 +2,7 @@
 
 English | [繁體中文](README_CN.md)
 
-This guide gets one real XLeRobot arm moving from your keyboard, then shows the short path to a second arm and to the whole mobile robot.
+This guide gets one real XLeRobot arm moving from your keyboard, then shows how to wire the wrist camera and read it while the arm moves, and the short path to a second arm and to the whole mobile robot.
 
 It is a local beginner guide for this workspace. The hardware, scripts, and plugins live in the upstream project: [Vector-Wangel/XLeRobot](https://github.com/Vector-Wangel/XLeRobot). Official docs: [xlerobot.readthedocs.io](https://xlerobot.readthedocs.io/en/latest/).
 
@@ -48,6 +48,7 @@ Do these every time, including the first "just a small move" test.
 - **Terminal.** The text window where you type commands. On Windows, use the Miniforge Prompt that the installer creates, or PowerShell after Miniforge is on your PATH. The line that waits for you is the prompt.
 - **Conda environment.** A private Python install named `lerobot`. You activate it in every new terminal before any command in this guide. If you skip that, Python will not see LeRobot.
 - **Port.** The name Windows gives the USB connection. It looks like `COM5`. Device Manager lists these under **Ports (COM & LPT)**. Your number may be `COM3`, `COM4`, or another COM port. Use the number you find. The `COM5` in the examples is only a placeholder.
+- **Camera index.** The number OpenCV uses for a USB camera. It looks like `0` or `1`. It is not a COM port. The motor board stays on its COM port. The camera is a separate USB device, and `lerobot-find-cameras` prints its number.
 - **Calibration.** A saved file that maps each motor's raw reading onto a joint angle. The first run has to create it. Later runs reuse it when you answer `n`.
 - **Joint control.** You nudge one motor at a time.
 - **End-effector control.** You nudge the gripper's position in space. The script computes the shoulder and elbow angles. That computation is inverse kinematics.
@@ -229,7 +230,124 @@ The gripper starts near `x = 0.163` m and `y = 0.113` m, measured in the arm's o
 | `X` | Ease back toward the startup pose, then quit |
 | `Esc` | Stop the program |
 
-## 6. Two arms
+## 6. Wire the wrist camera and read a picture
+
+The wrist camera looks at whatever the gripper is reaching for. It is a small USB camera screwed to the wrist, next to the gripper motor. It is not on the servo bus. It does not get a motor ID, and it does not use the motor power supply. Its USB plug goes to the PC, beside the motor board's USB plug. Both can be connected at the same time: the board stays a COM port such as `COM5`, and the camera gets a number such as `1`.
+
+Do this with the arm powered off and resting on the table. A caught cable is the usual way this step goes wrong, so leave slack before you power the motors again.
+
+### Parts
+
+Any 32 mm × 32 mm USB camera module rated at least 720p and 30 fps will fit. The SO-101 mount was drawn around [this Innomaker module](https://www.amazon.com/innomaker-Computer-Raspberry-Support-Windows/dp/B0CNCSFQC1). You also need:
+
+- The [3D-printed hex-nut camera adapter](https://github.com/TheRobotStudio/SO-ARM100/blob/main/Optional/SO101_Wrist_Cam_Hex-Nut_Mount_32x32_UVC_Module/stl/SO-ARM101_camera_wrist_mount.stl). Print it in the orientation of the STL, with tree supports and about 40% infill, so the camera does not wobble.
+- 4 M2 screws. These are the small screws that came with the Feetech servos.
+- 2 M3 × 8 mm screws and 2 M3 hex nuts. These are not in the servo kit.
+
+Illustrated version of the same steps: [SO-101 wrist camera mount](https://github.com/TheRobotStudio/SO-ARM100/tree/main/Optional/SO101_Wrist_Cam_Hex-Nut_Mount_32x32_UVC_Module).
+
+### Attach it to the wrist
+
+1. Unplug motor power and the board's USB cable.
+2. Remove motor 6 (the gripper). The moving jaw can stay on the motor.
+3. Drop the two M3 hex nuts into the recesses in the wrist-roll piece.
+4. Put motor 6 back and fasten it with its original M2 screws.
+5. Screw the printed adapter onto those nuts with the two M3 screws.
+6. Line up the camera's four holes with the adapter and fasten it with four M2 screws.
+
+### Plug it in
+
+1. Plug the camera's USB cable into a free USB port on the same PC as the motor board. Use a data cable. A charge-only cable shows no camera. A USB hub is fine when the PC has no spare port.
+2. Run the cable back along the arm to the PC. Leave a loose loop at the wrist and another at the elbow, so both joints can travel their full range without pulling the plug. Keep the cable off the fingers and out of the shoulder's sweep.
+3. Plug the motor board and the motor power supply back in, the same way as in section 2. The camera stays on its own USB port.
+
+### Find the camera's number
+
+LeRobot already includes OpenCV, so there is no extra install. With `lerobot` active:
+
+```powershell
+lerobot-find-cameras opencv
+```
+
+The command lists each camera and saves a test picture under `outputs\captured_images` in the folder where you ran it. A file named `opencv_1.png` is the camera whose Id is `1`.
+
+On Windows that Id is a small integer. A laptop's built-in camera is often `0`, and the wrist camera is the next one. To be sure, unplug the wrist camera, run the command again, and note which Id disappeared. Plug it back in and use that Id.
+
+Open the saved picture. The lens is manual and starts out blurry. Twist the lens until a new run is sharp. Use 640 × 480 at 30 fps afterward. A higher setting is extra data the arm does not need.
+
+You can also open the Windows **Camera** app and switch cameras there, to confirm the module works before Python. Close that app before `lerobot-find-cameras` or your script. Windows lets only one program hold the camera.
+
+### Read a frame while the arm is connected
+
+The keyboard scripts in `software\examples` do not open a camera. Your own script does, by passing a camera into the same `SO100Follower` you already use to move the arm.
+
+Save this as `arm_and_camera.py`. Use your COM port and the camera Id from the previous step.
+
+```python
+from PIL import Image
+
+from lerobot.cameras.opencv import OpenCVCameraConfig
+from lerobot.robots.so_follower import SO100Follower, SO100FollowerConfig
+
+robot = SO100Follower(
+    SO100FollowerConfig(
+        port="COM5",
+        id="my_arm",
+        cameras={
+            "wrist": OpenCVCameraConfig(
+                index_or_path=1,
+                width=640,
+                height=480,
+                fps=30,
+            )
+        },
+    )
+)
+
+robot.connect()
+obs = robot.get_observation()
+print(obs["shoulder_pan.pos"], obs["wrist"].shape)
+Image.fromarray(obs["wrist"]).save("wrist.jpg")
+
+# The arm and the camera share this connection.
+# Start with a small angle near where the arm already is.
+robot.send_action({"shoulder_pan.pos": 10.0})
+obs = robot.get_observation()
+Image.fromarray(obs["wrist"]).save("wrist_after_move.jpg")
+
+robot.disconnect()
+```
+
+Run it with the arm powered and the table clear. The arm can still ease toward zero when calibration runs, the same as in section 4.
+
+```powershell
+python arm_and_camera.py
+```
+
+`obs["wrist"]` is a NumPy image of shape `(480, 640, 3)`, in RGB. The name `wrist` is the key you put in `cameras`. Joint keys such as `shoulder_pan.pos` are unchanged. `wrist.jpg` is the picture the camera saw at that moment.
+
+Inside the same script, after `connect()`, a loop that keeps doing both looks like the keyboard scripts: read, then command, then wait about 0.02 seconds.
+
+```python
+import time
+
+while True:
+    obs = robot.get_observation()
+    frame = obs["wrist"]
+    # Use frame here. This line holds the shoulder where it already is.
+    robot.send_action({"shoulder_pan.pos": obs["shoulder_pan.pos"]})
+    time.sleep(0.02)
+```
+
+Press Ctrl+C to stop, then call `robot.disconnect()` so torque turns off. `send_action` still wants every joint you intend to hold. Copy the other `.pos` values from `obs` when the program runs for more than a moment. See section 9.
+
+### More than one camera
+
+Each extra camera is another USB plug and another Id. Add a second entry, for example `"head"`, with its own `index_or_path`. On the whole robot the usual set is one camera on each wrist and one on the head. The motor boards are still the only COM ports. Cameras never share those ports.
+
+A Raspberry Pi on the cart has two USB-A ports left after the two motor boards are plugged in. A USB hub covers a third camera.
+
+## 7. Two arms
 
 Each arm has its own controller board and its own USB port. Find both with `lerobot-find-port` (unplug one board when it asks, so you learn which port is which).
 
@@ -265,7 +383,7 @@ The script prints this map. Arm 1 uses the digit row. Arm 2 uses the home row.
 
 `X` eases both arms back and quits. `Esc` stops the program.
 
-## 7. The whole robot (base, head, and both arms)
+## 8. The whole robot (base, head, and both arms)
 
 Skip this until one arm is boring and reliable. These scripts expect the extra motors, and they will fail on a bare arm.
 
@@ -338,7 +456,7 @@ This script also eases the arms toward zero when it starts.
 
 Give the wheels a clear floor before you press `I`. More teleop options (Xbox, Joy-Con, VR) are on the [teleop page](https://xlerobot.readthedocs.io/en/latest/software/getting_started/XLeRobot_teleop.html).
 
-## 8. Command the arm from your own Python
+## 9. Command the arm from your own Python
 
 The demos are a loop around two calls: read `get_observation()`, then `send_action()`. You can do the same in a short script.
 
@@ -375,11 +493,23 @@ A real move should be a short loop, like the examples: read the current angle, s
 
 The same pattern is how the keyboard scripts work. They change a target when a key arrives, then every cycle they send `current + 0.5 * (target - current)`.
 
+If you passed `cameras` as in section 6, the same `get_observation()` also contains the image, under the name you chose.
+
 ## Troubleshooting
 
 **`conda` or `lerobot-find-port` is not recognized.** Open Miniforge Prompt, or run `conda activate lerobot` in this terminal. A new terminal starts outside the environment.
 
 **No COM port appears.** Use a data USB cable, set the Waveshare jumpers to `B`, and install the board's USB serial driver if Device Manager shows an unknown device. Close any other serial monitor that already has the port open.
+
+**The camera does not appear.** Close the Windows Camera app and any other program that has the camera open, then run `lerobot-find-cameras opencv` again. Use a data USB cable in a different port. The camera does not show up as a COM port.
+
+**The picture is the laptop webcam.** The built-in camera is often index `0`. Unplug the wrist camera, run the finder again, and use the Id that disappeared.
+
+**The picture is blurry.** Twist the lens on the module until a new test picture is sharp. This focus is manual.
+
+**`lerobot-find-cameras` errors, or the frame never arrives.** Some UVC modules on Windows need the DirectShow backend. In `OpenCVCameraConfig`, set `backend=Cv2Backends.DSHOW` after `from lerobot.cameras import Cv2Backends`. If frames still time out, drop `fps` from 30 to 20.
+
+**The USB cable pulls tight when the arm moves.** Add slack at the wrist and the elbow, and move the cable off the gripper. A tight cable will unplug itself or stall a joint.
 
 **No motor is detected.** Power is a separate plug from USB. Unplug and replug the motor power, then try again. Only the 3-pin servo cable should go from the board to the motor during ID setup.
 
@@ -411,6 +541,8 @@ If the example's longer import fails after a LeRobot update, the public import a
 ## Where to go next
 
 - [Software overview](https://xlerobot.readthedocs.io/en/latest/software/index.html) — the order the project recommends: one arm, then vision, then the full robot.
+- [Cameras](https://huggingface.co/docs/lerobot/en/cameras) — find a camera, then read frames with OpenCV.
+- [SO-101 wrist camera mount](https://github.com/TheRobotStudio/SO-ARM100/tree/main/Optional/SO101_Wrist_Cam_Hex-Nut_Mount_32x32_UVC_Module) — the illustrated hex-nut adapter.
 - [Arm examples](https://xlerobot.readthedocs.io/en/latest/software/getting_started/SO101.html) — joint, end-effector, dual-arm, and a YOLO follow demo (`3_so100_yolo_ee_control.py`) after the arm already moves.
 - [Teleop](https://xlerobot.readthedocs.io/en/latest/software/getting_started/XLeRobot_teleop.html) — keyboard, Xbox, Joy-Con, and VR for the full robot.
 - [SO-101 on Hugging Face](https://huggingface.co/docs/lerobot/en/so101) — assembly, motor IDs, and calibration videos.

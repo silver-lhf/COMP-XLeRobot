@@ -2,7 +2,7 @@
 
 [English](README.md) | 繁體中文
 
-這份指南帶你用鍵盤讓一條真實的 XLeRobot 機械臂動起來，然後再走一條很短的路：加上第二條手臂，以及整台移動機器人。
+這份指南帶你用鍵盤讓一條真實的 XLeRobot 機械臂動起來，接著說明怎麼接上手腕相機、並在手臂移動時讀到畫面，然後再走一條很短的路：加上第二條手臂，以及整台移動機器人。
 
 這是本工作區裡的一份本地入門說明。硬體、腳本和外掛都在上游專案裡：[Vector-Wangel/XLeRobot](https://github.com/Vector-Wangel/XLeRobot)。官方文件：[xlerobot.readthedocs.io](https://xlerobot.readthedocs.io/en/latest/)。
 
@@ -48,6 +48,7 @@ XLeRobot 的手臂是一條 [SO-101](https://huggingface.co/docs/lerobot/en/so10
 - **終端機（Terminal）。** 你輸入指令的文字視窗。在 Windows 上，用安裝程式建立的 Miniforge Prompt；如果 Miniforge 已經加進 PATH，也可以用 PowerShell。等你輸入的那一行叫提示字元。
 - **Conda 環境。** 一份名叫 `lerobot` 的獨立 Python。本指南裡的每條指令之前，都要在新開的終端機裡先啟動它。跳過這一步，Python 就找不到 LeRobot。
 - **埠（Port）。** Windows 給這條 USB 連線的名字。它看起來像 `COM5`。裝置管理員把這些列在 **連接埠 (COM 和 LPT)** 下面。你的編號可能是 `COM3`、`COM4`，或其他 COM 埠。用你找到的那個編號。範例裡的 `COM5` 只是佔位。
+- **相機編號（Camera index）。** OpenCV 用來指一顆 USB 相機的數字。它看起來像 `0` 或 `1`。它不是 COM 埠。馬達控制板仍然在它的 COM 埠上。相機是另外一顆 USB 裝置，`lerobot-find-cameras` 會印出它的編號。
 - **校正（Calibration）。** 一份儲存下來的檔案，把馬達的原始讀數換成關節角度。第一次執行必須產生它。以後再執行時，回答 `n` 就會沿用這份檔案。
 - **關節控制。** 一次只推動一顆馬達。
 - **末端控制。** 你推動的是夾爪在空間中的位置。腳本會算出肩部和肘部的角度。這個計算叫逆向運動學。
@@ -229,7 +230,124 @@ python 1_so100_keyboard_ee_control.py --robot.port=COM5
 | `X` | 緩緩回到啟動姿態，然後結束 |
 | `Esc` | 停止程式 |
 
-## 6. 兩條手臂
+## 6. 接上手腕相機，並讀到一張畫面
+
+手腕相機看的是夾爪正要去拿的東西。它是一顆小的 USB 相機，鎖在手腕上、夾爪馬達旁邊。它不在舵機匯流排上。它沒有馬達 ID，也不用馬達電源。它的 USB 插頭插到電腦上，就在馬達控制板的 USB 插頭旁邊。兩者可以同時接上：控制板仍然是一個 COM 埠，例如 `COM5`，相機則拿到一個數字，例如 `1`。
+
+做這一步時，手臂要斷電，並放在桌上。線被勾住是這一步最常見的問題，所以重新給馬達通電之前，先把線留出餘量。
+
+### 零件
+
+任何 32 公釐 × 32 公釐、至少 720p、30 fps 的 USB 相機模組都能裝上。SO-101 的支架是照著[這顆 Innomaker 模組](https://www.amazon.com/innomaker-Computer-Raspberry-Support-Windows/dp/B0CNCSFQC1)畫的。另外還需要：
+
+- [3D 列印的六角螺帽相機轉接座](https://github.com/TheRobotStudio/SO-ARM100/blob/main/Optional/SO101_Wrist_Cam_Hex-Nut_Mount_32x32_UVC_Module/stl/SO-ARM101_camera_wrist_mount.stl)。按 STL 裡的方向列印，使用樹狀支撐，填充大約 40%，相機才不會晃。
+- 4 顆 M2 螺絲。這些是飛特舵機附的小螺絲。
+- 2 顆 M3 × 8 公釐螺絲，和 2 顆 M3 六角螺帽。舵機套件裡沒有這兩樣。
+
+同一套步驟的圖解：[SO-101 手腕相機支架](https://github.com/TheRobotStudio/SO-ARM100/tree/main/Optional/SO101_Wrist_Cam_Hex-Nut_Mount_32x32_UVC_Module)。
+
+### 裝到手腕上
+
+1. 拔掉馬達電源和控制板的 USB 線。
+2. 拆下馬達 6（夾爪）。活動夾爪件可以留在馬達上。
+3. 把兩顆 M3 六角螺帽放進手腕扭轉件上的凹槽。
+4. 把馬達 6 裝回去，用原來的 M2 螺絲鎖上。
+5. 用兩顆 M3 螺絲把列印好的轉接座鎖到這兩顆螺帽上。
+6. 把相機的四個孔對準轉接座，用四顆 M2 螺絲鎖上。
+
+### 插上線
+
+1. 把相機的 USB 線插到和馬達控制板同一台電腦的空 USB 埠。要用能傳資料的線。只能充電的線不會出現相機。電腦沒有空埠時，USB 集線器可以用。
+2. 把線沿著手臂拉回電腦。手腕留一圈鬆的線，肘部再留一圈，兩個關節走完整個範圍時才不會把插頭扯掉。線不要碰到手指，也不要伸進底座旋轉的掃過範圍。
+3. 按第 2 節的方式，把馬達控制板和馬達電源插回去。相機留在它自己的 USB 埠上。
+
+### 找出相機的編號
+
+LeRobot 已經帶了 OpenCV，不必再裝其他套件。在已啟動的 `lerobot` 環境裡：
+
+```powershell
+lerobot-find-cameras opencv
+```
+
+這條指令會列出每顆相機，並在你執行時所在的資料夾底下，把測試畫面存到 `outputs\captured_images`。名叫 `opencv_1.png` 的檔案，就是 Id 為 `1` 的那顆相機。
+
+在 Windows 上，這個 Id 是一個小整數。筆記型電腦內建相機常常是 `0`，手腕相機是下一個。要確認的話，拔掉手腕相機，再執行一次，看哪一個 Id 消失了。插回去之後就用那個 Id。
+
+打開存下來的畫面。鏡頭是手動對焦的，一開始會很糊。轉動鏡頭，直到下一次存下來的畫面清楚。之後用 640 × 480、30 fps。再高只是手臂用不到的額外資料。
+
+也可以先打開 Windows 的 **相機** 應用程式，在裡面切換相機，確認模組在進 Python 之前是好的。執行 `lerobot-find-cameras` 或你的腳本之前，把這個應用程式關掉。Windows 一次只讓一個程式佔用相機。
+
+### 手臂連著的時候讀一張畫面
+
+`software\examples` 裡的鍵盤腳本不會打開相機。你自己的腳本可以：把相機傳進你已經用來移動手臂的那個 `SO100Follower`。
+
+把下面存成 `arm_and_camera.py`。埠改成你的 COM 埠，相機 Id 用上一步找到的編號。
+
+```python
+from PIL import Image
+
+from lerobot.cameras.opencv import OpenCVCameraConfig
+from lerobot.robots.so_follower import SO100Follower, SO100FollowerConfig
+
+robot = SO100Follower(
+    SO100FollowerConfig(
+        port="COM5",
+        id="my_arm",
+        cameras={
+            "wrist": OpenCVCameraConfig(
+                index_or_path=1,
+                width=640,
+                height=480,
+                fps=30,
+            )
+        },
+    )
+)
+
+robot.connect()
+obs = robot.get_observation()
+print(obs["shoulder_pan.pos"], obs["wrist"].shape)
+Image.fromarray(obs["wrist"]).save("wrist.jpg")
+
+# 手臂和相機共用這一次連線。
+# 先用一個靠近手臂目前位置的小角度。
+robot.send_action({"shoulder_pan.pos": 10.0})
+obs = robot.get_observation()
+Image.fromarray(obs["wrist"]).save("wrist_after_move.jpg")
+
+robot.disconnect()
+```
+
+手臂已上電、桌面已清空時執行。如果進入校正，手臂仍可能緩緩走向零位，和第 4 節一樣。
+
+```powershell
+python arm_and_camera.py
+```
+
+`obs["wrist"]` 是一張 NumPy 影像，形狀是 `(480, 640, 3)`，顏色是 RGB。`wrist` 這個名字就是你寫進 `cameras` 的鍵。`shoulder_pan.pos` 這類關節鍵不變。`wrist.jpg` 是相機在那一刻看到的畫面。
+
+在同一個腳本裡、`connect()` 之後，一個一直同時做這兩件事的迴圈，寫法和鍵盤腳本一樣：先讀，再下指令，然後等大約 0.02 秒。
+
+```python
+import time
+
+while True:
+    obs = robot.get_observation()
+    frame = obs["wrist"]
+    # 在這裡使用 frame。下面這行讓肩部停在目前的位置。
+    robot.send_action({"shoulder_pan.pos": obs["shoulder_pan.pos"]})
+    time.sleep(0.02)
+```
+
+按 Ctrl+C 停止，然後呼叫 `robot.disconnect()`，力矩才會關掉。`send_action` 仍然需要你打算維持的每一個關節。程式要跑一段時間時，其他 `.pos` 就從 `obs` 裡抄過來。見第 9 節。
+
+### 不只一顆相機
+
+每多一顆相機，就是多一個 USB 插頭、多一個 Id。再加一筆，例如 `"head"`，並填上它自己的 `index_or_path`。整台機器人通常是每條手腕一顆，再加上頭部一顆。馬達控制板仍然是僅有的 COM 埠。相機不會和它們共用這些埠。
+
+推車裡的樹莓派在插上兩塊馬達控制板之後，還剩兩個 USB-A 埠。第三顆相機要用 USB 集線器。
+
+## 7. 兩條手臂
 
 每條手臂有自己的控制板和自己的 USB 埠。用 `lerobot-find-port` 分別找出兩個埠（它讓你拔線時，拔掉其中一塊板，就能知道哪個埠是哪一塊）。
 
@@ -265,7 +383,7 @@ python 2_dual_so100_keyboard_ee_control.py --arm1.port=COM5 --arm2.port=COM6
 
 `X` 讓兩條手臂緩緩回去並結束。`Esc` 停止程式。
 
-## 7. 整台機器人（底盤、頭部和兩條手臂）
+## 8. 整台機器人（底盤、頭部和兩條手臂）
 
 等一條手臂已經穩定、操作變得無聊之後再做這一節。這些腳本需要額外的馬達，只有一條手臂時會失敗。
 
@@ -338,7 +456,7 @@ python 4_xlerobot_teleop_keyboard.py --robot.port1=COM5 --robot.port2=COM6
 
 按 `I` 之前，先給輪子留出空地。更多遙控操作方式（Xbox、Joy-Con、VR）在[遙控操作頁面](https://xlerobot.readthedocs.io/en/latest/software/getting_started/XLeRobot_teleop.html)。
 
-## 8. 用你自己的 Python 指揮手臂
+## 9. 用你自己的 Python 指揮手臂
 
 這些示範就是一個迴圈裡的兩次呼叫：先讀 `get_observation()`，再 `send_action()`。你可以用一段很短的腳本做同樣的事。
 
@@ -375,11 +493,23 @@ python move_once.py
 
 鍵盤腳本也是這個模式。按鍵到來時改目標，每個週期送出 `current + 0.5 * (target - current)`。
 
+如果像第 6 節那樣傳了 `cameras`，同一次 `get_observation()` 也會帶上影像，鍵名就是你取的那個名字。
+
 ## 排除問題
 
 **系統找不到 `conda` 或 `lerobot-find-port`。** 打開 Miniforge Prompt，或在這個終端機裡執行 `conda activate lerobot`。新開的終端機預設不在這個環境裡。
 
 **沒有出現 COM 埠。** 換一條能傳資料的 USB 線，把微雪跳線設到 `B`。如果裝置管理員裡是未知裝置，安裝這塊板的 USB 序列埠驅動程式。關掉其他已經佔用這個埠的序列埠監控程式。
+
+**相機沒有出現。** 關掉 Windows 的相機應用程式，以及其他已經打開相機的程式，然後再執行一次 `lerobot-find-cameras opencv`。換一個 USB 埠，並使用能傳資料的線。相機不會顯示成 COM 埠。
+
+**畫面是筆記型電腦的內建相機。** 內建相機的編號常常是 `0`。拔掉手腕相機，再執行一次尋找指令，用消失的那個 Id。
+
+**畫面很糊。** 轉動模組上的鏡頭，直到新的測試畫面變清楚。這個對焦是手動的。
+
+**`lerobot-find-cameras` 報錯，或一直等不到畫面。** 有些 UVC 模組在 Windows 上需要 DirectShow。在 `OpenCVCameraConfig` 裡設定 `backend=Cv2Backends.DSHOW`，並先寫 `from lerobot.cameras import Cv2Backends`。如果畫面仍然逾時，把 `fps` 從 30 降到 20。
+
+**手臂一動，USB 線就被拉緊。** 在手腕和肘部再留一些餘量，並把線移開夾爪。線拉緊時，插頭會自己脫落，或把某個關節卡住。
 
 **偵測不到馬達。** 電源是和 USB 分開的插頭。把馬達電源拔掉再插上，然後再試。設定 ID 時，控制板到馬達只接那條 3 針舵機線。
 
@@ -411,6 +541,8 @@ LeRobot 更新之後，如果範例裡較長的那兩行匯入失敗，就改用
 ## 接下來去哪裡
 
 - [軟體總覽](https://xlerobot.readthedocs.io/en/latest/software/index.html) — 專案建議的順序：先一條手臂，再視覺，再整台機器人。
+- [相機](https://huggingface.co/docs/lerobot/en/cameras) — 找出相機，再用 OpenCV 讀取畫面。
+- [SO-101 手腕相機支架](https://github.com/TheRobotStudio/SO-ARM100/tree/main/Optional/SO101_Wrist_Cam_Hex-Nut_Mount_32x32_UVC_Module) — 六角螺帽轉接座的圖解。
 - [手臂範例](https://xlerobot.readthedocs.io/en/latest/software/getting_started/SO101.html) — 關節、末端、雙臂，以及手臂已經能動之後的 YOLO 跟隨示範（`3_so100_yolo_ee_control.py`）。
 - [遙控操作](https://xlerobot.readthedocs.io/en/latest/software/getting_started/XLeRobot_teleop.html) — 整機的鍵盤、Xbox、Joy-Con 和 VR。
 - [Hugging Face 上的 SO-101](https://huggingface.co/docs/lerobot/en/so101) — 組裝、馬達 ID 和校正影片。
